@@ -3,9 +3,9 @@ import {configDotenv} from "dotenv";
 import express from "express";
 import cors from "cors";
 
-import httpLogger from "./src/middleware/rLogger.js"
-import logger from "./src/utils/logger.js";
-import analyticsRouter from "./src/routes/analytics.route.js";
+import httpLogger from "./middleware/rLogger.js"
+import logger from "./utils/logger.js";
+import analyticsRouter from "./routes/analytics.route.js";
 
 configDotenv()
 

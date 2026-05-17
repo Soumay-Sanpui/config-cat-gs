@@ -2,6 +2,7 @@ import {Router} from 'express';
 import featureGateMiddleware from "../middleware/featureGate.middleware.js";
 import rateLimitGateMiddleware from "../middleware/rateLimitGate.middleware.js";
 import {getFlagsForUser} from "../utils/flagService.js";
+import {getAllUsage, getUsage} from "../utils/rateLimitTracker.js";
 
 const MOCK_USER = {
     alice: {
@@ -93,6 +94,63 @@ analyticsRouter.get("/flags", async (req, res) => {
         plan: req.user.plan,
         orgId: req.user.orgId,
         flags,
+    });
+});
+
+analyticsRouter.get("/usage", async (req, res) => {
+    const usage = getUsage(req.user.id);
+
+    res.status(200).json({
+        user: req.user.email,
+        plan: req.user.plan,
+        usage,
+    });
+});
+
+analyticsRouter.get("/usage/all", async (req, res) => {
+    const all = getAllUsage();
+    res.json({
+        trackedUser: all.length,
+        usage: all,
+    });
+});
+
+// Simulate 20 anonymous users hitting the percentage bucket
+// None of them match any targeting rule — pure hash-based rollout
+analyticsRouter.get("/rollout/simulate", async (req, res) => {
+    const { getFlagsForUser } = await import("../utils/flagService.js");
+
+    const simulatedUsers = Array.from({ length: 20 }, (_, i) => ({
+        id:      `sim_user_${i + 1}`,
+        email:   `user${i + 1}@randomcorp.com`,  // matches no whitelist/blacklist rule
+        plan:    "free",
+        orgId:   `org_sim_${i + 1}`,
+        country: "IN",
+        role:    "member",
+    }));
+
+    const results = await Promise.all(
+        simulatedUsers.map(async (user) => {
+            const flags = await getFlagsForUser(user);
+            return {
+                userId:   user.id,
+                email:    user.email,
+                v2Engine: flags.v2Engine,   // true or false based on hash
+            };
+        })
+    );
+
+    const onCount  = results.filter(r => r.v2Engine).length;
+    const offCount = results.filter(r => !r.v2Engine).length;
+
+    res.json({
+        summary: {
+            total:         20,
+            v2Engine_ON:   onCount,
+            v2Engine_OFF:  offCount,
+            approxPercent: `${(onCount / 20) * 100}%`,
+        },
+        breakdown: results,
     });
 });
 
