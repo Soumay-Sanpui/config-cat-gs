@@ -19,3 +19,17 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+  localstack:
+    image: localstack/localstack-pro
+    ports:
+      - "4566:4566"
+
+    environment:
+      - SERVICES=sqs
+      - DEBUG=1
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN} # <- Env interpolation for auth token
+
+    volumes:
+      - "./localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"

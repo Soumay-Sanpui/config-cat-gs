@@ -32,6 +32,7 @@ app.get("/", (req, res) => {
       "GET /api/analytics/query?user=alice",
       "GET /api/analytics/export/pdf?user=bob",
       "GET /api/analytics/flags?user=alice",
+      "GET /api/analytics/queue-message"
     ]
   })
 })

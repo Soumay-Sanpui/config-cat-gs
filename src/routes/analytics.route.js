@@ -3,6 +3,7 @@ import featureGateMiddleware from "../middleware/featureGate.middleware.js";
 import rateLimitGateMiddleware from "../middleware/rateLimitGate.middleware.js";
 import {getFlagsForUser} from "../utils/flagService.js";
 import {getAllUsage, getUsage} from "../utils/rateLimitTracker.js";
+import {enqueueEmail} from "../services/sqs.service.js";
 
 const MOCK_USER = {
     alice: {
@@ -154,4 +155,16 @@ analyticsRouter.get("/rollout/simulate", async (req, res) => {
     });
 });
 
+analyticsRouter.get("/queue-message", async (req, res) => {
+    await enqueueEmail({
+        userId: req.user.id,
+        email: req.user.email,
+        plan: req.user?.plan,
+        type: "TEST_SQS_EMAIL",
+        timestamp: new Date().toISOString(),
+    });
+    res.status(200).json({
+        message: "Test email event enqueued successfully",
+    })
+})
 export default analyticsRouter;
