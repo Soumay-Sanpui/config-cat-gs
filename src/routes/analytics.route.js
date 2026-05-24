@@ -99,7 +99,7 @@ analyticsRouter.get("/flags", async (req, res) => {
 });
 
 analyticsRouter.get("/usage", async (req, res) => {
-    const usage = getUsage(req.user.id);
+    const usage = await getUsage(req.user.id);
 
     res.status(200).json({
         user: req.user.email,
