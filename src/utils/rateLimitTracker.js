@@ -1,49 +1,96 @@
-const store = new Map();
+import logger from "./logger.js";
+import Redis from "ioredis";
 
 const DAILY_LIMIT = 100;
-const WINDOW_MS = 24*60 * 60 * 1000;
+const WINDOW_SECS = 24 * 60 * 60;
 
-function getRecord(userId) {
-    const now = Date.now();
+const redis = new Redis({
+    host: process.env.REDIS_HOST || "redis",
+    port: process.env.REDIS_PORT || 6379,
 
-    if(!store.has(userId)) {
-        store.set(userId, {count: 0, windowStart: now});
+    lazyConnect: true,
+    retryStrategy(times) {
+        if(times > 3) {
+            logger.error("Redis unavailable after 3 retires - rate limiting disabled.");
+            return null;
+        }
+        return Math.min(times * 200 * 1000);
+    },
+});
+
+redis.on("connect", ()=> logger.info("Redis Connected"));
+redis.on("error", (error)=> logger.error(`Redis Error: ${error.message}`));
+
+
+function buildKey(userId) {
+    return `rate_limit:${userId}`;
+}
+
+async function increment(userId) {
+    try {
+        const key = buildKey(userId);
+        const count = await redis.incr(key);
+
+        // set expiry for the first time otherwise it will never expire & will push the window forward.
+        if(count === 1) await redis.expire(key, WINDOW_SECS);
+        return count;
+    } catch (error) {
+        logger.error(`Redis increment failed : ${userId} : ${error.message}`);
+        return 0;
     }
+}
 
-    const record = store.get(userId);
-    if(now - record.windowStart > WINDOW_MS) {
-        record.count = 0;
-        record.windowStart = now;
+async function getUsage(userId) {
+    try {
+        const key = buildKey(userId);
+        const [count, ttl] = await Promise.all([
+            redis.get(key),
+            redis.ttl(key)
+        ]);
+
+        const used = parseInt(count || "0", 10);
+        const remaining = Math.max(0, DAILY_LIMIT - used);
+        const resetAt = ttl > 0 ?
+            new Date(Date.now() + ttl * 1000).toISOString() :
+            new Date(Date.now() + WINDOW_SECS * 1000).toISOString();
+
+        return {
+            userId,
+            used,
+            remaining,
+            limit: DAILY_LIMIT,
+            resetAt,
+            windowAge: ttl > 0 ? `${Math.floor((WINDOW_SECS - ttl) / 3600)}h ${Math.floor(((WINDOW_SECS - ttl) % 3600) / 60)}m` : "0h 0m",
+            isExhausted: used >= DAILY_LIMIT,
+        };
+    } catch (error) {
+        logger.error(`Redis getUsage Error: ${error.message}`);
+        return {
+            userId,
+            used: 0,
+            remaining: DAILY_LIMIT,
+            limit: DAILY_LIMIT,
+            resetAt: null,
+            isExhausted: false,
+        };
     }
-
-    return record;
 }
 
-function increment(userId) {
-    const record = getRecord(userId);
-    record.count += 1;
-    store.set(userId, record);
-}
+async function getAllUsage() {
+    try {
+        const keys = await redis.keys("rate_limit:*");
+        if(keys.length === 0) return [];
 
-function getUsage(userId) {
-    const record  = getRecord(userId);
-    const now = Date.now();
-    const elpsed = now  - record.windowStart;
-    const resetAt = new Date(record.windowStart + WINDOW_MS).toISOString();
-
-    return {
-        userId,
-        used: record.count,
-        remaining: Math.max(0, DAILY_LIMIT - record.count),
-        limit: DAILY_LIMIT,
-        resetAt,
-        windowAge: `${Math.floor(elpsed / 1000 / 60)} Minutes`,
-        isExhausted: record.count >= DAILY_LIMIT,
-    };
-}
-
-function getAllUsage() {
-    return Array.from(store.keys()).map(getUsage);
+        return Promise.all(
+            keys.map((key) => {
+                const userId = key.replace("rate_limit:", "");
+                return getUsage(userId);
+            })
+        )
+    } catch(error) {
+        logger.error(`Redis getAllUsage failed: ${error.message}`);
+        return [];
+    }
 }
 
 export {increment, getUsage, getAllUsage};
