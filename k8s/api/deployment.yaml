@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: techcorp-api
+  namespace: techcorp
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: techcorp-api
+  # Rolling update — zero downtime deployments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2        # spin up 2 extra pods during update
+      maxUnavailable: 0  # never take pods down before new ones are ready
+  template:
+    metadata:
+      labels:
+        app: techcorp-api
+    spec:
+      containers:
+        - name: api
+          image: localhost:5000/ffl-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          # Inject secrets as environment variables
+          envFrom:
+            - secretRef:
+                name: techcorp-secrets
+          # Override Redis host to point to K8s service
+          env:
+            - name: REDIS_HOST
+              value: "redis.techcorp.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+          # Liveness — restart pod if this fails
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          # Readiness — only send traffic when this passes
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # Resource limits — prevent one pod eating all node resources
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"     # 100 millicores = 0.1 CPU
+            limits:
+              memory: "256Mi"
+              cpu: "500m"     # max 0.5 CPU per pod

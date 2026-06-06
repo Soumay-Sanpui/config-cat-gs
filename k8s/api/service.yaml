@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: techcorp-api
+  namespace: techcorp
+spec:
+  selector:
+    app: techcorp-api   # routes to all pods with this label
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP       # internal only, Ingress handles external traffic

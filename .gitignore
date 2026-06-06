@@ -29,6 +29,7 @@ build/
 .env
 .env.*
 !.env.example
+secret.yaml
 
 # OS files
 .DS_Store
